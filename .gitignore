@@ -10,3 +10,4 @@ wandb
 test
 **downloaded_artifacts**
 **wandb**
+best_model_cnn_final.pth
