@@ -18,7 +18,7 @@ from datetime import datetime
 os.makedirs("logs", exist_ok=True)
 
 # Timestamped log file
-log_filename = f"logs/run_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+log_filename = f"logs/without_dropout_run_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
 
 # Redirect stdout and stderr to the log file
 sys.stdout = open(log_filename, 'w')
@@ -68,7 +68,7 @@ class CNN(nn.Module):
         pool = config['max_pooling_size']
         dropout = config['dropout_rate']
         use_bn = config['use_batchnorm']
-        dropout_org = config['dropout_organisation']
+        # dropout_org = config['dropout_organisation']
 
         conv_layers = []
         for i in range(5):  # 5 conv layers
@@ -76,11 +76,11 @@ class CNN(nn.Module):
             conv_layers.append(nn.Conv2d(in_channels, out_channels, kernel_size=kernel_sizes[i], stride=stride, padding=padding))
             if use_bn:
                 conv_layers.append(nn.BatchNorm2d(out_channels))
-            if dropout_org == 'before_relu':
-                conv_layers.append(nn.Dropout2d(dropout))
+            # if dropout_org == 'before_relu':
+            #     conv_layers.append(nn.Dropout2d(dropout))
             conv_layers.append(activations[config['conv_activation']])
-            if dropout_org == 'after_relu':
-                conv_layers.append(nn.Dropout2d(dropout))
+            # if dropout_org == 'after_relu':
+            #     conv_layers.append(nn.Dropout2d(dropout))
             conv_layers.append(nn.MaxPool2d(kernel_size=pool))
             in_channels = out_channels
 
@@ -111,7 +111,7 @@ class TrainAndPredict:
         self.model = model.to(device)
         self.device = device
         self.class_names = class_names
-        self.criterion = nn.CrossEntropyLoss()
+        self.criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
         self.optimizer = optimizer_dict[optimizer](self.model.parameters(), lr=lr, weight_decay=weight_decay)
 
     def train(self, train_loader, val_loader, epochs=10, save_path='best_model.pth'):
@@ -227,6 +227,9 @@ def train_sweep(config=None):
 
         # Define your model
         model = CNN(dynamic_config)
+        
+        normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                 std=[0.229, 0.224, 0.225])
 
         # Dataloaders
         train_transform = transforms.Compose([
@@ -237,19 +240,20 @@ def train_sweep(config=None):
             transforms.RandomGrayscale(p=0.1),
             transforms.GaussianBlur(kernel_size=3),
             transforms.ToTensor(),
+            normalize
         ]) if config.use_augmentation else transforms.Compose([
             transforms.Resize(dynamic_config['image_size']),
             transforms.ToTensor(),
+            normalize
         ])
 
         val_transform = transforms.Compose([
             transforms.Resize(dynamic_config['image_size']),
             transforms.ToTensor(),
+            normalize
         ])
         
         
-        
-
         device = torch.device("cuda:2" if torch.cuda.is_available() else "cpu")
         torch.cuda.set_device(device)
         train_dataset = datasets.ImageFolder('train', transform=train_transform)
@@ -268,33 +272,33 @@ sweep_config = {
     'name': 'Custom CNN',
     'metric': {'name': "val_accuracy", 'goal': 'maximize'},
     'parameters': {
-        'conv_filters': {'values': [32, 64, 128]},
+        'conv_filters': {'values': [64, 128, 256]},
         'filter_org': {
             'values': ['same', 'double', 'half']
         },
-        'filter_size': {'values': [1,3,7,11]},
+        'filter_size': {'values': [1,3,5]},
         'stride': {'values': [1,2]},
         'padding': {'values': [1,2]},
         'max_pooling_size': {'value': 2},
-        'n_neurons': {'values': [64, 128, 256, 512, 1024]},
+        'n_neurons': {'values': [512,1024]},
         'n_classes': {'value': 10},
         'conv_activation': {
-            'values': ['relu', 'gelu', 'silu', 'mish', 'relu6','leaky_relu']
+            'values': ['relu', 'silu', 'relu6']
         },
         'dense_activation': {
-            'values': ['relu', 'gelu', 'silu', 'mish', 'relu6','leaky_relu']
+            'values': ['relu', 'silu','relu6']
         },
         'dropout_rate': {'values': [0.2, 0.3, 0.4, 0.5]},
         'use_batchnorm': {'values': [True, False]},
-        'factor': {'values': [0.5, 1, 2, 3]},
+        'factor': {'values': [0.5, 1, 2]},
         'learning_rate': {'values': [0.001,0.0001]},
-        'batch_size': {'values': [16,32,64]},
+        'batch_size': {'values': [32,64]},
         'optimizer': {'values': ['adam', 'adamw','sgd']},
-        'epochs': {'values': [5,10,15]},
+        'epochs': {'values': [10,15,20]},
         'use_augmentation': {'values': [True, False]},
         'dropout_organisation': {'values': ['after_relu','before_relu']},  # simplified for now
     },
 }
 
 sweep_id = wandb.sweep(sweep_config, project="iNaturalist_CNN")
-wandb.agent(sweep_id, function=train_sweep, count=30)
+wandb.agent(sweep_id, function=train_sweep, count=10)

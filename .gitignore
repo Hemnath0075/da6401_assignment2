@@ -7,3 +7,6 @@ train
 val
 logs
 wandb
+test
+**downloaded_artifacts**
+**wandb**
